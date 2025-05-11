@@ -54,7 +54,7 @@ def detect_emotion():
     data = request.get_json()
     text = data.get("text")
     selected_model = data.get("model")
-    lang = data.get("lang", "ru")  # по умолчанию "ru"
+    lang = data.get("lang", "ru")
 
     if not text or not selected_model:
         return jsonify({"error": "Некорректный запрос"}), 400
@@ -65,11 +65,20 @@ def detect_emotion():
     if selected_model != "voting":
         try:
             emotion = query_llm(text, selected_model, lang)
-            return jsonify({"emotion": emotion})
+            return jsonify({
+                "emotion": emotion,
+                "votes": [{
+                    "model": selected_model,
+                    "emotion": emotion,
+                    "category": category_map.get(emotion, "neutral" if lang == "en" else "нейтральная"),
+                    "weight": "-"
+                }]
+            })
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
     scores = {}
+    votes = []
 
     for model in MODELS:
         try:
@@ -77,15 +86,22 @@ def detect_emotion():
             emotion_list = [e.strip() for e in response_emotion.split(",")]
 
             if len(emotion_list) > 1:
-                category = "смешанная" if lang == "ru" else "mixed"
+                category = "mixed" if lang == "en" else "смешанная"
             else:
                 emotion = emotion_list[0]
-                category = category_map.get(emotion, "нейтральная" if lang == "ru" else "neutral")
+                category = category_map.get(emotion, "neutral" if lang == "en" else "нейтральная")
 
             weight = weights[model].get(category, 0)
 
             for em in emotion_list:
                 scores[em] = scores.get(em, 0) + weight
+
+            votes.append({
+                "model": model,
+                "emotion": response_emotion,
+                "category": category,
+                "weight": weight
+            })
 
         except Exception as e:
             print(f"Ошибка при запросе к {model}: {e}")
@@ -94,7 +110,11 @@ def detect_emotion():
         return jsonify({"error": "Не удалось определить эмоции"}), 500
 
     best_emotion = max(scores.items(), key=lambda kv: kv[1])[0]
-    return jsonify({"emotion": best_emotion})
+
+    return jsonify({
+        "emotion": best_emotion,
+        "votes": votes
+    })
 
 
 

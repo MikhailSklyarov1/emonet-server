@@ -12,7 +12,7 @@ API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 MODELS = [
     "deepseek/deepseek-r1-distill-qwen-32b:free",
-    "google/gemini-2.5-pro-exp-03-25:free",
+    "qwen/qwq-32b:free",
     "mistralai/mistral-small-3.1-24b-instruct:free",
 ]
 
@@ -36,15 +36,15 @@ emotion_category_map = {
 
 model_weights = {
     "deepseek/deepseek-r1-distill-qwen-32b:free": {
-        "положительная": 0.9,
-        "отрицательная": 0.7,
-        "нейтральная": 0.6,
+        "положительная": 0.2,
+        "отрицательная": 0.2,
+        "нейтральная": 0.2,
         "смешанная": 0.6,
     },
-    "google/gemini-2.5-pro-exp-03-25:free": {
-        "положительная": 0.8,
-        "отрицательная": 0.9,
-        "нейтральная": 0.6,
+    "qwen/qwq-32b:free": {
+        "положительная": 0.2,
+        "отрицательная": 0.2,
+        "нейтральная": 0.2,
         "смешанная": 0.5,
     },
     "mistralai/mistral-small-3.1-24b-instruct:free": {
@@ -98,7 +98,7 @@ def query_llm(text: str, model: str, task: str) -> str:
 
     response = requests.post(API_URL, headers=headers, data=json.dumps(payload))
     if response.status_code == 200:
-        print("Ответ модели: ", response.json()["choices"][0]["message"]["content"].strip().lower())
+        print("Ответ модели ", model, ": ", response.json()["choices"][0]["message"]["content"].strip().lower())
         return response.json()["choices"][0]["message"]["content"].strip().lower()
     else:
         raise Exception(response.text)

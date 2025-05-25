@@ -32,43 +32,43 @@ emotion_category_map_en = {
 
 model_weights = {
     "deepseek/deepseek-r1-distill-qwen-32b:free": {
-        "положительная": 0.2,
-        "отрицательная": 0.2,
-        "нейтральная": 0.2,
-        "смешанная": 0.6,
+        "положительная": 0.37,
+        "отрицательная": 0.43,
+        "нейтральная": 0.21,
+        "смешанная": 0.51,
     },
     "qwen/qwq-32b:free": {
-        "положительная": 0.2,
-        "отрицательная": 0.2,
-        "нейтральная": 0.2,
-        "смешанная": 0.5,
+        "положительная": 0.39,
+        "отрицательная": 0.29,
+        "нейтральная": 0.16,
+        "смешанная": 0.39,
     },
     "mistralai/mistral-small-3.1-24b-instruct:free": {
-        "положительная": 0.6,
-        "отрицательная": 0.7,
-        "нейтральная": 0.8,
-        "смешанная": 0.9,
+        "положительная": 0.37,
+        "отрицательная": 0.29,
+        "нейтральная": 0.36,
+        "смешанная": 0.39,
     },
 }
 
 model_weights_en = {
     "deepseek/deepseek-r1-distill-qwen-32b:free": {
-        "positive": 0.3,
-        "negative": 0.3,
-        "neutral": 0.3,
+        "positive": 0.41,
+        "negative": 0.42,
+        "neutral": 0.22,
         "mixed": 0.6,
     },
     "qwen/qwq-32b:free": {
-        "positive": 0.2,
-        "negative": 0.2,
+        "positive": 0.38,
+        "negative": 0.31,
         "neutral": 0.2,
-        "mixed": 0.5,
+        "mixed": 0.38,
     },
     "mistralai/mistral-small-3.1-24b-instruct:free": {
-        "positive": 0.6,
-        "negative": 0.7,
-        "neutral": 0.8,
-        "mixed": 0.9,
+        "positive": 0.4,
+        "negative": 0.3,
+        "neutral": 0.36,
+        "mixed": 0.38,
     },
 }
 

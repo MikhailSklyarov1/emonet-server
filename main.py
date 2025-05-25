@@ -3,7 +3,8 @@ from flask_cors import CORS
 import requests
 import json
 import os
-from config_data import emotion_category_map, emotion_category_map_en, model_weights, model_weights_en, emotions_list_by_lang, MODELS
+from config_data import emotion_category_map, emotion_category_map_en, model_weights, model_weights_en, \
+    emotions_list_by_lang, MODELS
 
 app = Flask(__name__)
 CORS(app)
@@ -12,7 +13,7 @@ API_KEY = os.getenv("API_KEY")
 API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 
-def query_llm(text: str, model: str, lang: str) -> str:
+def build_prompt_and_messages(text: str, lang: str) -> tuple[str, list]:
     emotions_list = emotions_list_by_lang.get(lang, emotions_list_by_lang["ru"])
 
     if lang == "en":
@@ -26,13 +27,19 @@ def query_llm(text: str, model: str, lang: str) -> str:
         system_msg = "Ты определяешь эмоции в текстах."
         user_msg = f"Текст: {text}. Выведи одну эмоцию одним словом"
 
+    return system_msg, [
+        {"role": "system", "content": system_msg},
+        {"role": "user", "content": prompt},
+        {"role": "user", "content": user_msg}
+    ]
+
+
+def query_llm(text: str, model: str, lang: str) -> str:
+    system_msg, messages = build_prompt_and_messages(text, lang)
+
     payload = {
         "model": model,
-        "messages": [
-            {"role": "system", "content": system_msg},
-            {"role": "user", "content": prompt},
-            {"role": "user", "content": user_msg}
-        ],
+        "messages": messages,
     }
 
     headers = {
@@ -41,42 +48,29 @@ def query_llm(text: str, model: str, lang: str) -> str:
     }
 
     response = requests.post(API_URL, headers=headers, data=json.dumps(payload))
+
     if response.status_code == 200:
-        print("Ответ модели ", model, ": ", response.json()["choices"][0]["message"]["content"].strip().lower())
-        return response.json()["choices"][0]["message"]["content"].strip().lower()
+        result = response.json()["choices"][0]["message"]["content"].strip().lower()
+        print("Ответ модели ", model, ": ", result)
+        return result
     else:
         raise Exception(response.text)
 
 
+def get_emotion_from_model(text: str, model: str, lang: str, category_map: dict) -> dict:
+    emotion = query_llm(text, model, lang)
+    return {
+        "emotion": emotion,
+        "votes": [{
+            "model": model,
+            "emotion": emotion,
+            "category": category_map.get(emotion, "neutral" if lang == "en" else "нейтральная"),
+            "weight": "-"
+        }]
+    }
 
-@app.route("/api/emotion", methods=["POST"])
-def detect_emotion():
-    data = request.get_json()
-    text = data.get("text")
-    selected_model = data.get("model")
-    lang = data.get("lang", "ru")
 
-    if not text or not selected_model:
-        return jsonify({"error": "Некорректный запрос"}), 400
-
-    category_map = emotion_category_map if lang == "ru" else emotion_category_map_en
-    weights = model_weights if lang == "ru" else model_weights_en
-
-    if selected_model != "voting":
-        try:
-            emotion = query_llm(text, selected_model, lang)
-            return jsonify({
-                "emotion": emotion,
-                "votes": [{
-                    "model": selected_model,
-                    "emotion": emotion,
-                    "category": category_map.get(emotion, "neutral" if lang == "en" else "нейтральная"),
-                    "weight": "-"
-                }]
-            })
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
-
+def get_emotion_voting(text: str, lang: str, category_map: dict, weights: dict) -> dict:
     scores = {}
     votes = []
 
@@ -107,16 +101,45 @@ def detect_emotion():
             print(f"Ошибка при запросе к {model}: {e}")
 
     if not scores:
-        return jsonify({"error": "Не удалось определить эмоции"}), 500
+        raise Exception("Не удалось определить эмоции")
 
     best_emotion = max(scores.items(), key=lambda kv: kv[1])[0]
 
-    return jsonify({
+    return {
         "emotion": best_emotion,
         "votes": votes
-    })
+    }
 
 
+def validate_request_data(data: dict) -> tuple[str, str]:
+    text = data.get("text")
+    selected_model = data.get("model")
+    if not text or not selected_model:
+        raise ValueError("Некорректный запрос")
+    return text, selected_model
+
+
+@app.route("/api/emotion", methods=["POST"])
+def detect_emotion():
+    try:
+        data = request.get_json()
+        text, selected_model = validate_request_data(data)
+        lang = data.get("lang", "ru")
+
+        category_map = emotion_category_map if lang == "ru" else emotion_category_map_en
+        weights = model_weights if lang == "ru" else model_weights_en
+
+        if selected_model != "voting":
+            result = get_emotion_from_model(text, selected_model, lang, category_map)
+        else:
+            result = get_emotion_voting(text, lang, category_map, weights)
+
+        return jsonify(result)
+
+    except ValueError as ve:
+        return jsonify({"error": str(ve)}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 if __name__ == "__main__":

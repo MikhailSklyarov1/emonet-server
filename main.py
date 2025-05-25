@@ -1,10 +1,17 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import requests
+import httpx
+import asyncio
 import json
 import os
-from config_data import emotion_category_map, emotion_category_map_en, model_weights, model_weights_en, \
-    emotions_list_by_lang, MODELS
+from config_data import (
+    emotion_category_map,
+    emotion_category_map_en,
+    model_weights,
+    model_weights_en,
+    emotions_list_by_lang,
+    MODELS,
+)
 
 app = Flask(__name__)
 CORS(app)
@@ -30,11 +37,11 @@ def build_prompt_and_messages(text: str, lang: str) -> tuple[str, list]:
     return system_msg, [
         {"role": "system", "content": system_msg},
         {"role": "user", "content": prompt},
-        {"role": "user", "content": user_msg}
+        {"role": "user", "content": user_msg},
     ]
 
 
-def query_llm(text: str, model: str, lang: str) -> str:
+async def query_llm(text: str, model: str, lang: str) -> str:
     system_msg, messages = build_prompt_and_messages(text, lang)
 
     payload = {
@@ -47,36 +54,39 @@ def query_llm(text: str, model: str, lang: str) -> str:
         "Content-Type": "application/json",
     }
 
-    response = requests.post(API_URL, headers=headers, data=json.dumps(payload))
+    async with httpx.AsyncClient() as client:
+        response = await client.post(API_URL, headers=headers, json=payload, timeout=60)
 
     if response.status_code == 200:
         result = response.json()["choices"][0]["message"]["content"].strip().lower()
-        print("Ответ модели ", model, ": ", result)
+        print("Ответ модели", model, ":", result)
         return result
     else:
         raise Exception(response.text)
 
 
-def get_emotion_from_model(text: str, model: str, lang: str, category_map: dict) -> dict:
-    emotion = query_llm(text, model, lang)
+async def get_emotion_from_model(text: str, model: str, lang: str, category_map: dict) -> dict:
+    emotion = await query_llm(text, model, lang)
     return {
         "emotion": emotion,
-        "votes": [{
-            "model": model,
-            "emotion": emotion,
-            "category": category_map.get(emotion, "neutral" if lang == "en" else "нейтральная"),
-            "weight": "-"
-        }]
+        "votes": [
+            {
+                "model": model,
+                "emotion": emotion,
+                "category": category_map.get(emotion, "neutral" if lang == "en" else "нейтральная"),
+                "weight": "-",
+            }
+        ],
     }
 
 
-def get_emotion_voting(text: str, lang: str, category_map: dict, weights: dict) -> dict:
+async def get_emotion_voting(text: str, lang: str, category_map: dict, weights: dict) -> dict:
     scores = {}
     votes = []
 
-    for model in MODELS:
+    async def get_vote(model: str):
         try:
-            response_emotion = query_llm(text, model, lang)
+            response_emotion = await query_llm(text, model, lang)
             emotion_list = [e.strip() for e in response_emotion.split(",")]
 
             if len(emotion_list) > 1:
@@ -90,15 +100,22 @@ def get_emotion_voting(text: str, lang: str, category_map: dict, weights: dict) 
             for em in emotion_list:
                 scores[em] = scores.get(em, 0) + weight
 
-            votes.append({
+            return {
                 "model": model,
                 "emotion": response_emotion,
                 "category": category,
-                "weight": weight
-            })
-
+                "weight": weight,
+            }
         except Exception as e:
             print(f"Ошибка при запросе к {model}: {e}")
+            return None
+
+    tasks = [get_vote(model) for model in MODELS]
+    results = await asyncio.gather(*tasks)
+
+    for vote in results:
+        if vote:
+            votes.append(vote)
 
     if not scores:
         raise Exception("Не удалось определить эмоции")
@@ -107,7 +124,7 @@ def get_emotion_voting(text: str, lang: str, category_map: dict, weights: dict) 
 
     return {
         "emotion": best_emotion,
-        "votes": votes
+        "votes": votes,
     }
 
 
@@ -120,7 +137,7 @@ def validate_request_data(data: dict) -> tuple[str, str]:
 
 
 @app.route("/api/emotion", methods=["POST"])
-def detect_emotion():
+async def detect_emotion():
     try:
         data = request.get_json()
         text, selected_model = validate_request_data(data)
@@ -130,9 +147,9 @@ def detect_emotion():
         weights = model_weights if lang == "ru" else model_weights_en
 
         if selected_model != "voting":
-            result = get_emotion_from_model(text, selected_model, lang, category_map)
+            result = await get_emotion_from_model(text, selected_model, lang, category_map)
         else:
-            result = get_emotion_voting(text, lang, category_map, weights)
+            result = await get_emotion_voting(text, lang, category_map, weights)
 
         return jsonify(result)
 
@@ -143,4 +160,10 @@ def detect_emotion():
 
 
 if __name__ == "__main__":
+    import os
+    import sys
+
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
     app.run(debug=True)
